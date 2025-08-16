@@ -13,7 +13,6 @@ import type {
     Node,
     NodeTypes,
     OnConnect,
-    OnConnectEnd,
     ReactFlowInstance,
     Connection,
 } from 'reactflow';
@@ -36,7 +35,7 @@ import {
     mathProcessorTemplate,
     conditionalTemplate
 } from '../nodeTemplates/ProcessingNodeTemplates';
-import { generateNodeIdByNodeInfo } from '../utils/nodeUtils';
+// import { generateNodeIdByNodeInfo } from '../utils/nodeUtils'; // 暂未使用
 
 const { Header, Content, Sider } = Layout;
 const { Title } = Typography;
@@ -70,36 +69,7 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({
         }));
     }, [workflow?.edges]);
 
-    const [edges, setEdges, originalOnEdgesChange] = useEdgesState(initialEdges);
-
-    // 包装边变化处理，确保删除连接时也触发相关节点更新
-    const onEdgesChange = useCallback((changes: any[]) => {
-        originalOnEdgesChange(changes);
-
-        // 检查是否有边被删除
-        const removedEdges = changes.filter(change => change.type === 'remove');
-        if (removedEdges.length > 0) {
-            // 为所有受影响的目标节点触发重新渲染
-            setTimeout(() => {
-                const affectedTargets = new Set(
-                    removedEdges.map(change => {
-                        const edge = edges.find(e => e.id === change.id);
-                        return edge?.target;
-                    }).filter(Boolean)
-                );
-
-                if (affectedTargets.size > 0) {
-                    setNodes((nds) =>
-                        nds.map((node) =>
-                            affectedTargets.has(node.id)
-                                ? { ...node, data: { ...node.data, _updateTrigger: Date.now() } }
-                                : node
-                        )
-                    );
-                }
-            }, 50);
-        }
-    }, [originalOnEdgesChange, edges, setNodes]);
+        const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 
     const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
     const [contextMenu, setContextMenu] = useState<{
@@ -163,7 +133,7 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({
             console.log(`处理源节点 ${sourceNode.id}, 类型: ${sourceNode.type}`, sourceNode.data);
 
             // 获取源节点的模板
-            const sourceTemplate = nodeRegistry.get(sourceNode.type);
+            const sourceTemplate = nodeRegistry.get(sourceNode.type || '');
             if (!sourceTemplate) continue;
 
             // 获取源节点的输出端口
@@ -209,7 +179,7 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({
 
         console.log(`节点 ${nodeId} 最终获取到的上游数据选项:`, options);
         return options;
-    }, [nodes, edges]);
+    }, [nodes, edges]); // 确保edges变化时重新计算上游数据选项
 
     // 辅助函数：从端口数据类型推断实际类型
     const getDataTypeFromPort = (portDataType: string): string => {
@@ -237,8 +207,8 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({
         const templates = nodeRegistry.getAll();
 
         templates.forEach(template => {
-            // 使用 useCallback 优化节点渲染函数，避免每次重新创建
-            types[template.metadata.type] = React.memo((props: any) => {
+            // 移除React.memo以确保连接变化时节点能够重新渲染
+            types[template.metadata.type] = (props: any) => {
                 const { data, selected } = props;
                 const nodeData = data;
 
@@ -293,11 +263,11 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({
                         outputPort={ports.output}
                     />
                 );
-            });
+            };
         });
 
         return types;
-    }, [setNodes, nodeTypesReady, nodes, edges]); // 添加关键依赖项确保连接变化时重新渲染
+    }, [setNodes, nodeTypesReady, getUpstreamDataOptions]); // 添加getUpstreamDataOptions确保连接变化时更新
 
     const validateConnection = useCallback((connection: Connection): PortConnectionRuleResult => {
         if (!connection.source || !connection.target || !connection.sourceHandle || !connection.targetHandle) {
@@ -313,8 +283,8 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({
         }
 
         // 获取节点模板
-        const sourceTemplate = nodeRegistry.get(sourceNode.type);
-        const targetTemplate = nodeRegistry.get(targetNode.type);
+        const sourceTemplate = nodeRegistry.get(sourceNode.type || '');
+        const targetTemplate = nodeRegistry.get(targetNode.type || '');
 
         if (!sourceTemplate || !targetTemplate) {
             return { allowed: false, message: '源节点或目标节点模板不存在' };
@@ -464,7 +434,7 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({
         };
     }, []);
 
-    const onConnect: OnConnect = useCallback(
+        const onConnect: OnConnect = useCallback(
         (params) => {
             // 为连接添加箭头标记
             const edgeWithArrow = {
@@ -480,27 +450,14 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({
                     stroke: '#4f46e5',
                 },
             };
-
+            
             // 更新边连接
             setEdges((eds) => addEdge(edgeWithArrow, eds));
-
-            // 强制触发目标节点的重新渲染以更新可用的上游数据选项
-            if (params.target) {
-                setTimeout(() => {
-                    setNodes((nds) =>
-                        nds.map((node) =>
-                            node.id === params.target
-                                ? { ...node, data: { ...node.data, _updateTrigger: Date.now() } }
-                                : node
-                        )
-                    );
-                }, 50); // 短延迟确保边更新完成
-            }
         },
-        [setEdges, setNodes]
+        [setEdges]
     );
 
-    const onNodeDragStop = useCallback((_event: any, node: Node) => {
+    const onNodeDragStop = useCallback((_event: any, _node: Node) => {
     }, []);
 
     const onDragOver = useCallback((event: React.DragEvent) => {
@@ -535,7 +492,7 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({
             const initialData = template.initialData();
 
             // 使用端口管理器为节点分配端口ID
-            const portConfigs = template.getPorts(initialData);
+            // const portConfigs = template.getPorts(initialData); // 暂未使用
 
             const newNode: Node = {
                 id: newNodeId,
