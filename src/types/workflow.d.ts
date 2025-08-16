@@ -56,11 +56,42 @@ export interface Edge {
     metadata?: Record<string, any>; // 例如条件表达式、优先级等
 }
 
+// 节点执行结果
+export interface NodeExecutionResult {
+    nodeId: string;
+    nodeType: string;
+    timestamp: number;
+    success: boolean;
+    outputs: Record<string, any>;
+    error?: string;
+}
+
+// 工作流执行上下文
+export interface WorkflowExecutionContext {
+    workflowId: string;
+    startTime: number;
+    nodeResults: Map<string, NodeExecutionResult>;
+    globalVariables: Record<string, any>;
+}
+
 // 节点执行上下文（可用于日志、变量存取、流程控制等）
 export interface ExecutionContext {
     workflowId: string;
     nodeId: string;
     variables: Record<string, any>;
+
+    // 新增：工作流执行上下文，让节点可以访问整个工作流的状态
+    workflowContext: WorkflowExecutionContext;
+
+    // 新增：获取上游节点数据的方法
+    getUpstreamData: (nodeId: string) => Record<string, any> | null;
+
+    // 新增：获取所有上游节点数据的方法
+    getAllUpstreamData: () => Record<string, Record<string, any>>;
+
+    // 新增：根据节点类型获取上游数据
+    getUpstreamDataByType: (nodeType: string) => Record<string, any>[];
+
     logger?: {
         info: (msg: string) => void;
         warn: (msg: string) => void;
@@ -70,6 +101,25 @@ export interface ExecutionContext {
     signal?: AbortSignal;
 }
 
+// 节点参数定义
+export interface NodeParameter {
+    key: string;                    // 参数键名
+    name: string;                   // 参数显示名称
+    type: 'string' | 'number' | 'boolean' | 'array' | 'object' | 'any'; // 参数类型
+    required: boolean;              // 是否必需
+    description?: string;           // 参数描述
+    defaultValue?: any;             // 默认值
+}
+
+// 参数选择配置
+export interface ParameterSelection {
+    parameterKey: string;           // 参数键名
+    source: 'static' | 'upstream';  // 数据源类型：静态值或上游数据
+    sourceNodeId?: string;          // 来源节点ID（当source为upstream时）
+    sourceOutputKey?: string;       // 来源输出字段名（当source为upstream时）
+    staticValue?: any;              // 静态值（当source为static时）
+}
+
 // 节点模板
 export interface NodeTemplate<T extends Record<string, any>> {
     // 元数据
@@ -77,6 +127,9 @@ export interface NodeTemplate<T extends Record<string, any>> {
 
     // 数据结构
     initialData: () => T;  // 初始数据生成器
+
+    // 节点参数定义
+    parameters?: NodeParameter[];   // 节点需要的参数定义
 
     // 简化的端口配置 - 每个节点只有一个输入和一个输出端口
     getPorts: (nodeData: T) => {
@@ -100,7 +153,22 @@ export interface NodeTemplate<T extends Record<string, any>> {
 
     renderInPalette?: (nodeData: T, metadata: NodeMetadata) => ReactNode;
 
-    renderInEditor?: (nodeData: T, isSelected: boolean, onDataChange: (data: T) => void, metadata: NodeMetadata) => ReactNode;
+    renderInEditor?: (
+        nodeData: T,
+        isSelected: boolean,
+        onDataChange: (data: T) => void,
+        metadata: NodeMetadata,
+        context?: {
+            nodeId?: string;
+            availableUpstreamData?: Array<{
+                nodeId: string;
+                outputKey: string;
+                outputType: string;
+                label: string;
+                value: string;
+            }>;
+        }
+    ) => ReactNode;
 
     // 样式自定义
     styling?: {

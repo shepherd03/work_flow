@@ -25,7 +25,7 @@ export const GeneralNodeWrapper: React.FC<GeneralNodeWrapperProps> = ({
             relative
         `}>
             {/* 输入端口 */}
-            {inputPort && (
+            {inputPort && inputPort.dataType !== 'none' && (
                 <PortComponent
                     id={inputPort.id}
                     type="input"
@@ -37,7 +37,7 @@ export const GeneralNodeWrapper: React.FC<GeneralNodeWrapperProps> = ({
             {children}
 
             {/* 输出端口 */}
-            {outputPort && (
+            {outputPort && outputPort.dataType !== 'none' && (
                 <PortComponent
                     id={outputPort.id}
                     type="output"
