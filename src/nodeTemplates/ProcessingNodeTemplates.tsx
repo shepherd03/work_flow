@@ -2,17 +2,14 @@ import React from 'react';
 import {
     FileTextOutlined,
     CalculatorOutlined,
-    BranchesOutlined,
-    SwapOutlined,
-    FilterOutlined,
-    SortAscendingOutlined
+    BranchesOutlined
 } from '@ant-design/icons';
-import { Input, InputNumber, Select, Tag, Typography, Card, Divider, Switch } from 'antd';
+import { Input, Select, Tag, Typography, Card, Divider } from 'antd';
 import { GeneralNodeWrapper } from '../components/general/GeneralNodeWrapper';
 import { ParameterSelector, type UpstreamDataOption } from '../components/general/ParameterSelector';
-import type { NodeTemplate, Port, ExecutionContext, NodeParameter, ParameterSelection, NodeExecutionResult } from '../types/workflow';
+import type { NodeTemplate, ExecutionContext, NodeParameter, ParameterSelection } from '../types/workflow';
 
-const { Text, Title } = Typography;
+const { Text } = Typography;
 
 // =========================== 文本处理节点 ===========================
 
@@ -46,37 +43,19 @@ export const createTextProcessorTemplate = (): NodeTemplate<TextProcessorData> =
             icon: React.createElement(FileTextOutlined),
         },
 
-        parameters: nodeParameters,
-
-        initialData: () => ({
-            operation: 'uppercase',
-            parameterSelections: {
-                textInput: {
-                    parameterKey: 'textInput',
-                    source: 'static',
-                    staticValue: ''
-                }
-            },
-            searchText: '',
-            replaceText: '',
-            separator: ',',
-            concatSeparator: ' '
-        }),
-
-        getPorts: (nodeData) => ({
-            input: { id: 'input', dataType: 'any' },
-            output: { id: 'output', dataType: 'any' }
-        }),
+        inputFields: nodeParameters,
 
         validate: (nodeData) => {
             const errors: string[] = [];
 
-            // 检查必需的参数是否已配置
+            // 检查必需的参数是否已配置上游数据源
             const textInputSelection = nodeData.parameterSelections?.textInput;
 
             if (!textInputSelection ||
-                (textInputSelection.source === 'static' && textInputSelection.staticValue === undefined)) {
-                errors.push('文本输入参数未配置');
+                textInputSelection.source !== 'upstream' ||
+                !textInputSelection.sourceNodeId ||
+                !textInputSelection.sourceOutputKey) {
+                errors.push('文本输入参数必须选择上游数据源');
             }
 
             // 检查特定操作的配置
@@ -93,7 +72,7 @@ export const createTextProcessorTemplate = (): NodeTemplate<TextProcessorData> =
             };
         },
 
-        execute: async (inputs, nodeData, context: ExecutionContext) => {
+        execute: async (_inputs, nodeData, context: ExecutionContext) => {
             // 辅助函数：根据参数选择获取实际值
             const getParameterValue = (parameterKey: string, fallbackValue?: any): any => {
                 const selection = nodeData.parameterSelections[parameterKey];
@@ -150,9 +129,7 @@ export const createTextProcessorTemplate = (): NodeTemplate<TextProcessorData> =
             return { output: result };
         },
 
-        renderInEditor: (nodeData, isSelected, onDataChange, metadata, context) => {
-            const ports = createTextProcessorTemplate().getPorts(nodeData);
-
+        renderInEditor: (nodeData, _isSelected, onDataChange, metadata, context) => {
             // 重新定义参数以供UI使用
             const uiParameters: NodeParameter[] = [
                 {
@@ -168,7 +145,7 @@ export const createTextProcessorTemplate = (): NodeTemplate<TextProcessorData> =
             const upstreamOptions: UpstreamDataOption[] = context?.availableUpstreamData || [];
 
             return (
-                <GeneralNodeWrapper inputPort={ports.input} outputPort={ports.output}>
+                <GeneralNodeWrapper hasInput={true} hasOutput={true}>
                     <div className="space-y-3">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center space-x-2">
@@ -317,54 +294,39 @@ export const createMathProcessorTemplate = (): NodeTemplate<MathProcessorData> =
             icon: React.createElement(CalculatorOutlined),
         },
 
-        parameters: nodeParameters,
-
-        initialData: () => ({
-            operation: 'add',
-            parameterSelections: {
-                number1: {
-                    parameterKey: 'number1',
-                    source: 'static',
-                    staticValue: 0
-                },
-                number2: {
-                    parameterKey: 'number2',
-                    source: 'static',
-                    staticValue: 0
-                }
-            }
-        }),
-
-        getPorts: (nodeData) => ({
-            input: { id: 'input', dataType: 'number' },
-            output: { id: 'output', dataType: 'number' }
-        }),
+        inputFields: nodeParameters,
 
         validate: (nodeData) => {
             const errors: string[] = [];
 
-            // 检查必需的参数是否已配置
+            // 检查必需的参数是否已配置上游数据源
             if (['add', 'subtract', 'multiply', 'divide', 'power'].includes(nodeData.operation)) {
                 // 二元运算需要两个参数
                 const number1Selection = nodeData.parameterSelections?.number1;
                 const number2Selection = nodeData.parameterSelections?.number2;
 
                 if (!number1Selection ||
-                    (number1Selection.source === 'static' && number1Selection.staticValue === undefined)) {
-                    errors.push('第一个数字参数未配置');
+                    number1Selection.source !== 'upstream' ||
+                    !number1Selection.sourceNodeId ||
+                    !number1Selection.sourceOutputKey) {
+                    errors.push('第一个数字参数必须选择上游数据源');
                 }
 
                 if (!number2Selection ||
-                    (number2Selection.source === 'static' && number2Selection.staticValue === undefined)) {
-                    errors.push('第二个数字参数未配置');
+                    number2Selection.source !== 'upstream' ||
+                    !number2Selection.sourceNodeId ||
+                    !number2Selection.sourceOutputKey) {
+                    errors.push('第二个数字参数必须选择上游数据源');
                 }
             } else {
                 // 一元运算只需要一个参数
                 const number1Selection = nodeData.parameterSelections?.number1;
 
                 if (!number1Selection ||
-                    (number1Selection.source === 'static' && number1Selection.staticValue === undefined)) {
-                    errors.push('数字参数未配置');
+                    number1Selection.source !== 'upstream' ||
+                    !number1Selection.sourceNodeId ||
+                    !number1Selection.sourceOutputKey) {
+                    errors.push('数字参数必须选择上游数据源');
                 }
             }
 
@@ -375,7 +337,7 @@ export const createMathProcessorTemplate = (): NodeTemplate<MathProcessorData> =
             };
         },
 
-        execute: async (inputs, nodeData, context: ExecutionContext) => {
+        execute: async (_inputs, nodeData, context: ExecutionContext) => {
             // 辅助函数：根据参数选择获取实际值
             const getParameterValue = (parameterKey: string, fallbackValue?: any): any => {
                 const selection = nodeData.parameterSelections[parameterKey];
@@ -433,9 +395,7 @@ export const createMathProcessorTemplate = (): NodeTemplate<MathProcessorData> =
             return { output: result };
         },
 
-        renderInEditor: (nodeData, isSelected, onDataChange, metadata, context) => {
-            const ports = createMathProcessorTemplate().getPorts(nodeData);
-
+        renderInEditor: (nodeData, _isSelected, onDataChange, metadata, context) => {
             // 重新定义参数以供UI使用
             const uiParameters: NodeParameter[] = [
                 {
@@ -460,7 +420,7 @@ export const createMathProcessorTemplate = (): NodeTemplate<MathProcessorData> =
                 : [uiParameters[0]]; // 一元运算只需要一个参数
 
             return (
-                <GeneralNodeWrapper inputPort={ports.input} outputPort={ports.output}>
+                <GeneralNodeWrapper hasInput={true} hasOutput={true}>
                     <div className="space-y-3">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center space-x-2">
@@ -564,51 +524,22 @@ export const createConditionalTemplate = (): NodeTemplate<ConditionalData> => {
             icon: React.createElement(BranchesOutlined),
         },
 
-        parameters: nodeParameters,
-
-        initialData: () => ({
-            condition: 'equals',
-            parameterSelections: {
-                value1: {
-                    parameterKey: 'value1',
-                    source: 'static',
-                    staticValue: ''
-                },
-                value2: {
-                    parameterKey: 'value2',
-                    source: 'static',
-                    staticValue: ''
-                },
-                trueValue: {
-                    parameterKey: 'trueValue',
-                    source: 'static',
-                    staticValue: true
-                },
-                falseValue: {
-                    parameterKey: 'falseValue',
-                    source: 'static',
-                    staticValue: false
-                }
-            }
-        }),
-
-        getPorts: (nodeData) => ({
-            input: { id: 'input', dataType: 'any' },
-            output: { id: 'output', dataType: 'any' }
-        }),
+        inputFields: nodeParameters,
 
         validate: (nodeData) => {
             const errors: string[] = [];
 
-            // 检查必需的参数是否已配置
+            // 检查必需的参数是否已配置上游数据源
             const requiredParams = ['value1', 'value2', 'trueValue', 'falseValue'];
 
             for (const paramKey of requiredParams) {
                 const selection = nodeData.parameterSelections?.[paramKey];
 
                 if (!selection ||
-                    (selection.source === 'static' && selection.staticValue === undefined)) {
-                    errors.push(`参数 ${paramKey} 未配置`);
+                    selection.source !== 'upstream' ||
+                    !selection.sourceNodeId ||
+                    !selection.sourceOutputKey) {
+                    errors.push(`参数 ${paramKey} 必须选择上游数据源`);
                 }
             }
 
@@ -619,7 +550,7 @@ export const createConditionalTemplate = (): NodeTemplate<ConditionalData> => {
             };
         },
 
-        execute: async (inputs, nodeData, context: ExecutionContext) => {
+        execute: async (_inputs, nodeData, context: ExecutionContext) => {
             // 辅助函数：根据参数选择获取实际值
             const getParameterValue = (parameterKey: string, fallbackValue?: any): any => {
                 const selection = nodeData.parameterSelections[parameterKey];
@@ -689,9 +620,7 @@ export const createConditionalTemplate = (): NodeTemplate<ConditionalData> => {
             };
         },
 
-        renderInEditor: (nodeData, isSelected, onDataChange, metadata, context) => {
-            const ports = createConditionalTemplate().getPorts(nodeData);
-
+        renderInEditor: (nodeData, _isSelected, onDataChange, metadata, context) => {
             // 重新定义参数以供UI使用
             const uiParameters: NodeParameter[] = [
                 {
@@ -725,7 +654,7 @@ export const createConditionalTemplate = (): NodeTemplate<ConditionalData> => {
             ];
 
             return (
-                <GeneralNodeWrapper inputPort={ports.input} outputPort={ports.output}>
+                <GeneralNodeWrapper hasInput={true} hasOutput={true}>
                     <div className="space-y-3">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center space-x-2">

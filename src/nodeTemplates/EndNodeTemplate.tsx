@@ -14,7 +14,10 @@ interface OutputFormat {
 
 // 结束节点数据结构
 interface EndNodeData {
-    name: string;
+    metadata?: {
+        name?: string;
+    };
+    parameterSelections?: Record<string, any>;
     outputFormat: OutputFormat;
     showPreview: boolean; // 是否在节点中预览输出
     saveToFile: boolean;  // 是否保存到文件
@@ -39,35 +42,30 @@ export const createEndNodeTemplate = (): NodeTemplate<EndNodeData> => {
             icon: React.createElement(StopOutlined),
         },
 
-        initialData: () => ({
-            name: '结束节点',
-            outputFormat: {
-                type: 'json'
-            },
-            showPreview: true,
-            saveToFile: false,
-            fileName: 'workflow_output.json'
-        }),
-
-        getPorts: () => {
-            return {
-                input: {
-                    id: 'input',
-                    dataType: 'any', // 可以接收任何类型的输入
-                },
-                output: {
-                    id: 'output',
-                    dataType: 'none', // 结束节点没有输出
-                },
-            };
-        },
+        // 结束节点需要从上游获取数据
+        inputFields: [
+            {
+                key: 'finalData',
+                name: '最终数据',
+                type: 'any',
+                required: true,
+                description: '工作流的最终输出数据'
+            }
+        ],
 
         validate: (nodeData) => {
             const errors: string[] = [];
             const warnings: string[] = [];
 
-            if (!nodeData.name || nodeData.name.trim() === '') {
-                errors.push('结束节点名称不能为空');
+            // 检查输入字段是否有有效的上游连接
+            if (!nodeData.parameterSelections || !nodeData.parameterSelections.finalData) {
+                errors.push('结束节点需要连接上游数据源');
+            } else {
+                const finalDataSelection = nodeData.parameterSelections.finalData;
+                if (finalDataSelection.source === 'upstream' &&
+                    (!finalDataSelection.sourceNodeId || !finalDataSelection.sourceOutputKey)) {
+                    errors.push('最终数据参数必须选择有效的上游数据源');
+                }
             }
 
             if (nodeData.saveToFile && (!nodeData.fileName || nodeData.fileName.trim() === '')) {
@@ -161,12 +159,10 @@ export const createEndNodeTemplate = (): NodeTemplate<EndNodeData> => {
         },
 
         renderInEditor: (nodeData, _isSelected, onDataChange, metadata, _context) => {
-            const ports = createEndNodeTemplate().getPorts(nodeData);
-
             return (
                 <GeneralNodeWrapper
-                    inputPort={ports.input}
-                    outputPort={undefined} // 结束节点没有输出端口
+                    hasInput={true}
+                    hasOutput={false} // 结束节点没有输出连接点
                 >
                     <div className="space-y-3">
                         {/* 节点头部 */}
@@ -189,10 +185,13 @@ export const createEndNodeTemplate = (): NodeTemplate<EndNodeData> => {
                             <Text type="secondary" className="text-xs">节点名称:</Text>
                             <Input
                                 size="small"
-                                value={nodeData.name}
+                                value={nodeData.metadata?.name || ''}
                                 onChange={(e) => onDataChange({
                                     ...nodeData,
-                                    name: e.target.value
+                                    metadata: {
+                                        ...nodeData.metadata,
+                                        name: e.target.value
+                                    }
                                 })}
                                 placeholder="输入节点名称..."
                                 className="text-xs mt-1 w-full"

@@ -37,30 +37,8 @@ export const createStartNodeTemplate = (): NodeTemplate<StartNodeData> => {
             icon: React.createElement(PlayCircleOutlined),
         },
 
-        initialData: () => ({
-            fields: [
-                {
-                    name: 'input',
-                    type: 'string',
-                    defaultValue: '',
-                    description: '默认输入字段'
-                }
-            ],
-            name: '开始节点'
-        }),
-
-        getPorts: () => {
-            return {
-                input: {
-                    id: 'input',
-                    dataType: 'none', // 开始节点没有输入
-                },
-                output: {
-                    id: 'output',
-                    dataType: 'object', // 输出为包含所有配置字段的对象
-                },
-            };
-        },
+        // 开始节点不需要输入字段，它提供初始数据
+        inputFields: [],
 
         validate: (nodeData) => {
             const errors: string[] = [];
@@ -98,9 +76,11 @@ export const createStartNodeTemplate = (): NodeTemplate<StartNodeData> => {
             // 开始节点执行时，返回配置的字段和其默认值
             const result: Record<string, any> = {};
 
-            nodeData.fields.forEach(field => {
-                result[field.name] = field.defaultValue;
-            });
+            if (nodeData?.fields && Array.isArray(nodeData.fields)) {
+                nodeData.fields.forEach(field => {
+                    result[field.name] = field.defaultValue;
+                });
+            }
 
             context.logger?.info(`开始节点执行，输出数据: ${JSON.stringify(result)}`);
 
@@ -133,7 +113,6 @@ export const createStartNodeTemplate = (): NodeTemplate<StartNodeData> => {
         },
 
         renderInEditor: (nodeData, _isSelected, onDataChange, metadata, _context) => {
-            const ports = createStartNodeTemplate().getPorts(nodeData);
 
             const getDefaultValue = (type: string) => {
                 switch (type) {
@@ -187,8 +166,8 @@ export const createStartNodeTemplate = (): NodeTemplate<StartNodeData> => {
 
             return (
                 <GeneralNodeWrapper
-                    inputPort={undefined} // 开始节点没有输入端口
-                    outputPort={ports.output}
+                    hasInput={false} // 开始节点没有输入连接点
+                    hasOutput={true}
                 >
                     <div className="space-y-3">
                         {/* 节点头部 */}

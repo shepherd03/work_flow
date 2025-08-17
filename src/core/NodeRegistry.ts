@@ -156,14 +156,6 @@ export class NodeRegistry implements INodeRegistry {
             throw new Error('节点模板必须有metadata.category属性');
         }
 
-        if (typeof template.initialData !== 'function') {
-            throw new Error('节点模板的initialData必须是函数');
-        }
-
-        if (typeof template.getPorts !== 'function') {
-            throw new Error('节点模板的getPorts必须是函数');
-        }
-
         if (typeof template.execute !== 'function') {
             throw new Error('节点模板的execute必须是函数');
         }

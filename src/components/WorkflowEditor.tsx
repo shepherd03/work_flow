@@ -19,7 +19,7 @@ import type {
 import { Layout, Button, Space, Typography, App } from 'antd';
 import { SaveOutlined, PlayCircleOutlined } from '@ant-design/icons';
 import 'reactflow/dist/style.css';
-import type { Workflow, NodeTemplate, PortConnectionRuleResult } from '../types/workflow';
+import type { Workflow, NodeTemplate } from '../types/workflow';
 import type { UpstreamDataOption } from './general/ParameterSelector';
 import NodePalette from './editor/NodePalette';
 import ContextMenu from './editor/ContextMenu';
@@ -35,7 +35,8 @@ import {
     mathProcessorTemplate,
     conditionalTemplate
 } from '../nodeTemplates/ProcessingNodeTemplates';
-// import { generateNodeIdByNodeInfo } from '../utils/nodeUtils'; // 暂未使用
+import { loopNodeTemplate } from '../nodeTemplates/LoopNodeTemplate';
+
 
 const { Header, Content, Sider } = Layout;
 const { Title } = Typography;
@@ -50,7 +51,21 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({
     onWorkflowChange,
 }) => {
     const { message } = App.useApp();
-    const [nodes, setNodes, onNodesChange] = useNodesState(workflow?.nodes || []);
+    // 初始化节点时构建父节点指针（单父节点模式）
+    const initializeNodesWithParentPointers = (nodes: any[], edges: any[]) => {
+        return nodes.map(node => {
+            const incomingEdge = edges.find(edge => edge.target === node.id);
+
+            return {
+                ...node,
+                parentNode: incomingEdge?.source || undefined
+            };
+        });
+    };
+
+    const [nodes, setNodes, onNodesChange] = useNodesState(
+        workflow?.nodes ? initializeNodesWithParentPointers(workflow.nodes, workflow.edges || []) : []
+    );
 
     // 为所有边添加箭头标记
     const initialEdges = useMemo(() => {
@@ -69,7 +84,50 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({
         }));
     }, [workflow?.edges]);
 
-        const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+    const [edges, setEdges] = useEdgesState(initialEdges);
+
+    // 自定义边变化处理器，维护单父节点指针
+    const handleEdgesChange = useCallback((changes: any[]) => {
+        // 先处理删除的边，更新父节点指针
+        const removedEdges = changes
+            .filter(change => change.type === 'remove')
+            .map(change => edges.find(edge => edge.id === change.id))
+            .filter((edge): edge is NonNullable<typeof edge> => edge != null);
+
+        // 更新节点的父节点指针（单父节点模式）
+        if (removedEdges.length > 0) {
+            setNodes((nds) =>
+                nds.map((node: any) => {
+                    const removedParentEdge = removedEdges.find(edge => edge.target === node.id);
+
+                    if (removedParentEdge) {
+                        return {
+                            ...node,
+                            parentNode: undefined // 移除父节点指针
+                        };
+                    }
+                    return node;
+                })
+            );
+        }
+
+        // 应用边的变化
+        setEdges((currentEdges) => {
+            let newEdges = [...currentEdges];
+            changes.forEach(change => {
+                if (change.type === 'remove') {
+                    const index = newEdges.findIndex(edge => edge.id === change.id);
+                    if (index >= 0) {
+                        newEdges.splice(index, 1);
+                    }
+                } else if (change.type === 'add') {
+                    newEdges.push(change.item);
+                }
+                // 可以添加其他类型的变化处理
+            });
+            return newEdges;
+        });
+    }, [edges, setEdges, setNodes]);
 
     const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
     const [contextMenu, setContextMenu] = useState<{
@@ -92,111 +150,203 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({
     // 使用 useTransition 优化状态更新性能
     const [isPending, startTransition] = useTransition();
 
-    // 默认连接验证函数
-    const defaultConnectionValidation = (sourcePort: any, targetPort: any): { allowed: boolean; message?: string } => {
-        // 1. 不能自己连自己
-        if (sourcePort.id === targetPort.id) {
-            return { allowed: false, message: '不能连接到自己' };
-        }
 
-        // 2. 只能输入连输出，或输出连接输入
-        const sourceIsOutput = sourcePort.type === 'output';
-        const targetIsInput = targetPort.type === 'input';
 
-        if (!(sourceIsOutput && targetIsInput)) {
-            return { allowed: false, message: '只能从输出端口连接到输入端口' };
-        }
-
-        // 3. 输入输出类型必须兼容 (any类型可以接受任何类型)
-        if (sourcePort.dataType !== targetPort.dataType &&
-            sourcePort.dataType !== 'any' &&
-            targetPort.dataType !== 'any') {
-            return { allowed: false, message: `类型不匹配：${sourcePort.dataType ?? 'unknown'} 不能连接到 ${targetPort.dataType ?? 'unknown'}` };
-        }
-
-        return { allowed: true };
-    };
-
-    // 获取指定节点的上游数据选项
+    // 简化的上游数据获取（单父节点 + 直接数据流）
     const getUpstreamDataOptions = useCallback((nodeId: string): UpstreamDataOption[] => {
         const options: UpstreamDataOption[] = [];
 
-        // 找到所有连接到指定节点的边
-        const incomingEdges = edges.filter(edge => edge.target === nodeId);
-        console.log(`获取节点 ${nodeId} 的上游数据选项，连接边数量: ${incomingEdges.length}`, incomingEdges);
-
-        for (const edge of incomingEdges) {
-            // 找到源节点
-            const sourceNode = nodes.find(n => n.id === edge.source);
-            if (!sourceNode) continue;
-
-            console.log(`处理源节点 ${sourceNode.id}, 类型: ${sourceNode.type}`, sourceNode.data);
-
-            // 获取源节点的模板
-            const sourceTemplate = nodeRegistry.get(sourceNode.type || '');
-            if (!sourceTemplate) continue;
-
-            // 获取源节点的输出端口
-            try {
-                const sourcePorts = sourceTemplate.getPorts(sourceNode.data);
-                const outputPort = sourcePorts.output;
-
-                if (outputPort && outputPort.dataType !== 'none') {
-                    // 模拟输出数据类型（实际应该从节点执行结果中获取）
-                    const outputType = getDataTypeFromPort(outputPort.dataType);
-
-                    // 为不同的输出字段创建选项
-                    // 这里简化处理，假设每个节点都有一个主输出
-                    options.push({
-                        nodeId: sourceNode.id,
-                        outputKey: 'output',
-                        outputType: outputType,
-                        label: `${sourceNode.data.metadata?.name || sourceNode.type} (${outputType})`,
-                        value: `${sourceNode.id}:output`
-                    });
-
-                    // 如果有特定的输出字段，也添加它们
-                    if (sourceNode.type === 'workflow-start') {
-                        // 开始节点可能有多个字段
-                        const startData = sourceNode.data;
-                        if (startData.fields) {
-                            startData.fields.forEach((field: any) => {
-                                options.push({
-                                    nodeId: sourceNode.id,
-                                    outputKey: field.name, // 修复：使用field.name而不是field.key
-                                    outputType: field.type,
-                                    label: `${sourceNode.data.metadata?.name || sourceNode.type}.${field.name} (${field.type})`,
-                                    value: `${sourceNode.id}:${field.name}`
-                                });
-                            });
-                        }
-                    }
-                }
-            } catch (error) {
-                console.warn('无法获取节点端口信息:', error);
-            }
+        // 找到当前节点
+        const currentNode: any = nodes.find(n => n.id === nodeId);
+        if (!currentNode?.parentNode) {
+            return options; // 没有父节点，返回空选项
         }
 
-        console.log(`节点 ${nodeId} 最终获取到的上游数据选项:`, options);
-        return options;
-    }, [nodes, edges]); // 确保edges变化时重新计算上游数据选项
+        // 找到父节点
+        const parentNode = nodes.find(n => n.id === currentNode.parentNode);
+        if (!parentNode) {
+            return options; // 父节点不存在，返回空选项
+        }
 
-    // 辅助函数：从端口数据类型推断实际类型
-    const getDataTypeFromPort = (portDataType: string): string => {
-        switch (portDataType) {
-            case 'string':
+        // 获取父节点的显示名称
+        const parentName = parentNode.data?.metadata?.name || parentNode.type || parentNode.id;
+
+        // 简化策略：每个节点提供一个统一的输出接口
+        // 特殊处理开始节点的多字段输出
+        if (parentNode.type === 'workflow-start' && parentNode.data?.fields) {
+            // 开始节点：提供每个字段作为独立选项
+            parentNode.data.fields.forEach((field: any) => {
+                options.push({
+                    nodeId: parentNode.id,
+                    outputKey: field.name,
+                    outputType: field.type,
+                    label: `${parentName}.${field.name}`,
+                    value: `${parentNode.id}:${field.name}`
+                });
+            });
+        } else {
+            // 其他节点：统一的输出接口
+            const outputType = getDataTypeFromNodeType(parentNode.type || '');
+            options.push({
+                nodeId: parentNode.id,
+                outputKey: 'output',
+                outputType: outputType,
+                label: `来自 ${parentName}`,
+                value: `${parentNode.id}:output`
+            });
+        }
+
+        return options;
+    }, [nodes]);
+
+    // 辅助函数：从节点类型推断输出数据类型
+    const getDataTypeFromNodeType = (nodeType: string): string => {
+        switch (nodeType) {
+            case 'data-string':
                 return 'string';
-            case 'number':
+            case 'data-number':
                 return 'number';
-            case 'boolean':
+            case 'data-boolean':
                 return 'boolean';
-            case 'array':
+            case 'data-array':
                 return 'array';
-            case 'object':
+            case 'data-object':
                 return 'object';
-            case 'any':
+            case 'text-processor':
+                return 'any'; // 文本处理可能返回字符串或数组
+            case 'math-processor':
+                return 'number';
+            case 'conditional':
+                return 'any'; // 条件判断可能返回任何类型
+            case 'loop-processor':
+                return 'array'; // 循环处理器通常返回数组
+            case 'workflow-start':
+                return 'object'; // 开始节点返回对象
             default:
                 return 'any';
+        }
+    };
+
+    // 辅助函数：为不同节点类型创建初始数据
+    const createInitialDataForNodeType = (nodeType: string): any => {
+        switch (nodeType) {
+            case 'text-processor':
+                return {
+                    operation: 'uppercase',
+                    metadata: { name: '文本处理器' },
+                    parameterSelections: {
+                        textInput: {
+                            parameterKey: 'textInput',
+                            source: 'upstream' as const,
+                            sourceNodeId: undefined,
+                            sourceOutputKey: undefined
+                        }
+                    },
+                    searchText: '',
+                    replaceText: '',
+                    separator: ',',
+                    concatSeparator: ' '
+                };
+            case 'math-processor':
+                return {
+                    operation: 'add',
+                    metadata: { name: '数学计算器' },
+                    parameterSelections: {
+                        number1: {
+                            parameterKey: 'number1',
+                            source: 'upstream' as const,
+                            sourceNodeId: undefined,
+                            sourceOutputKey: undefined
+                        },
+                        number2: {
+                            parameterKey: 'number2',
+                            source: 'upstream' as const,
+                            sourceNodeId: undefined,
+                            sourceOutputKey: undefined
+                        }
+                    }
+                };
+            case 'conditional':
+                return {
+                    condition: 'equals',
+                    metadata: { name: '条件判断' },
+                    parameterSelections: {
+                        value1: {
+                            parameterKey: 'value1',
+                            source: 'upstream' as const,
+                            sourceNodeId: undefined,
+                            sourceOutputKey: undefined
+                        },
+                        value2: {
+                            parameterKey: 'value2',
+                            source: 'upstream' as const,
+                            sourceNodeId: undefined,
+                            sourceOutputKey: undefined
+                        },
+                        trueValue: {
+                            parameterKey: 'trueValue',
+                            source: 'upstream' as const,
+                            sourceNodeId: undefined,
+                            sourceOutputKey: undefined
+                        },
+                        falseValue: {
+                            parameterKey: 'falseValue',
+                            source: 'upstream' as const,
+                            sourceNodeId: undefined,
+                            sourceOutputKey: undefined
+                        }
+                    }
+                };
+            case 'workflow-start':
+                return {
+                    fields: [
+                        {
+                            name: 'input',
+                            type: 'string',
+                            defaultValue: '',
+                            description: '默认输入字段'
+                        }
+                    ],
+                    metadata: { name: '开始节点' }
+                };
+            case 'workflow-end':
+                return {
+                    outputFormat: { type: 'json' },
+                    showPreview: true,
+                    saveToFile: false,
+                    fileName: 'workflow_output.json',
+                    metadata: { name: '结束节点' },
+                    parameterSelections: {
+                        finalData: {
+                            source: 'upstream' as const,
+                            sourceNodeId: undefined,
+                            sourceOutputKey: undefined
+                        }
+                    }
+                };
+            case 'loop-processor':
+                return {
+                    loopType: 'forEach',
+                    maxIterations: 1000,
+                    collectResults: true,
+                    breakOnError: false,
+                    loopBodyExpression: 'element => element',
+                    metadata: { name: '循环处理器' },
+                    parameterSelections: {
+                        inputArray: {
+                            source: 'upstream' as const,
+                            sourceNodeId: undefined,
+                            sourceOutputKey: undefined
+                        },
+                        loopFunction: {
+                            source: 'upstream' as const,
+                            sourceNodeId: undefined,
+                            sourceOutputKey: undefined
+                        }
+                    }
+                };
+            default:
+                return { metadata: { name: nodeType } };
         }
     };
 
@@ -207,8 +357,8 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({
         const templates = nodeRegistry.getAll();
 
         templates.forEach(template => {
-            // 移除React.memo以确保连接变化时节点能够重新渲染
-            types[template.metadata.type] = (props: any) => {
+            // 使用 useCallback 优化节点渲染函数，避免每次重新创建
+            types[template.metadata.type] = React.memo((props: any) => {
                 const { data, selected } = props;
                 const nodeData = data;
 
@@ -242,7 +392,6 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({
                 }
 
                 // 默认渲染
-                const ports = template.getPorts(nodeData);
                 return (
                     <DefaultNode
                         nodeData={nodeData}
@@ -259,30 +408,40 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({
                             });
                         }, [props.id, startTransition])}
                         metadata={template.metadata}
-                        inputPort={ports.input}
-                        outputPort={ports.output}
+                        hasInput={true}
+                        hasOutput={true}
                     />
                 );
-            };
+            });
         });
 
         return types;
-    }, [setNodes, nodeTypesReady, getUpstreamDataOptions]); // 添加getUpstreamDataOptions确保连接变化时更新
+    }, [setNodes, nodeTypesReady]); // 添加 nodeTypesReady 作为依赖项
 
-    const validateConnection = useCallback((connection: Connection): PortConnectionRuleResult => {
+    const validateConnection = useCallback((connection: Connection): { allowed: boolean; message?: string } => {
         if (!connection.source || !connection.target || !connection.sourceHandle || !connection.targetHandle) {
             return { allowed: false, message: '连接参数不完整' };
         }
 
         // 获取源节点和目标节点
         const sourceNode = nodes.find(node => node.id === connection.source);
-        const targetNode = nodes.find(node => node.id === connection.target);
+        const targetNode: any = nodes.find(node => node.id === connection.target);
 
         if (!sourceNode || !targetNode) {
             return { allowed: false, message: '源节点或目标节点不存在' };
         }
 
-        // 获取节点模板
+        // 单父节点约束：检查目标节点是否已经有父节点
+        if (targetNode.parentNode && targetNode.parentNode !== connection.source) {
+            return { allowed: false, message: '每个节点只能有一个输入连接' };
+        }
+
+        // 防止自环连接
+        if (connection.source === connection.target) {
+            return { allowed: false, message: '节点不能连接到自己' };
+        }
+
+        // 获取节点模板以便进行进一步的验证（如果需要的话）
         const sourceTemplate = nodeRegistry.get(sourceNode.type || '');
         const targetTemplate = nodeRegistry.get(targetNode.type || '');
 
@@ -290,65 +449,7 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({
             return { allowed: false, message: '源节点或目标节点模板不存在' };
         }
 
-        // 获取端口信息
-        const sourcePorts = sourceTemplate.getPorts(sourceNode.data);
-        const targetPorts = targetTemplate.getPorts(targetNode.data);
-
-        // 找到对应的端口
-        const sourcePort = sourcePorts.output;
-        const targetPort = targetPorts.input;
-
-        if (!sourcePort || !targetPort) {
-            return { allowed: false, message: '源端口或目标端口不存在' };
-        }
-
-        // none类型的端口不会被渲染，所以不需要额外检查
-
-        // 构建端口对象，包含类型信息
-        const sourcePortWithType = { ...sourcePort, type: 'output' };
-        const targetPortWithType = { ...targetPort, type: 'input' };
-
-        // 首先检查源端口的自定义验证规则
-        if (sourcePort.connectionRules?.customValidation) {
-            const customResult = sourcePort.connectionRules.customValidation(sourcePortWithType, targetPortWithType);
-            return customResult;
-        }
-
-        // 检查源端口的允许/禁止数据类型规则
-        if (sourcePort.connectionRules?.allowedDataTypes &&
-            targetPort.dataType &&
-            !sourcePort.connectionRules.allowedDataTypes.includes(targetPort.dataType)) {
-            return { allowed: false, message: `源端口不允许连接到 ${targetPort.dataType} 类型` };
-        }
-
-        if (sourcePort.connectionRules?.disallowedDataTypes &&
-            targetPort.dataType &&
-            sourcePort.connectionRules.disallowedDataTypes.includes(targetPort.dataType)) {
-            return { allowed: false, message: `源端口禁止连接到 ${targetPort.dataType} 类型` };
-        }
-
-        // 检查目标端口的自定义验证规则
-        if (targetPort.connectionRules?.customValidation) {
-            const customResult = targetPort.connectionRules.customValidation(sourcePortWithType, targetPortWithType);
-            return customResult;
-        }
-
-        // 检查目标端口的允许/禁止数据类型规则
-        if (targetPort.connectionRules?.allowedDataTypes &&
-            sourcePort.dataType &&
-            !targetPort.connectionRules.allowedDataTypes.includes(sourcePort.dataType)) {
-            return { allowed: false, message: `目标端口不允许接受 ${sourcePort.dataType} 类型` };
-        }
-
-        if (targetPort.connectionRules?.disallowedDataTypes &&
-            sourcePort.dataType &&
-            targetPort.connectionRules.disallowedDataTypes.includes(sourcePort.dataType)) {
-            return { allowed: false, message: `目标端口禁止接受 ${sourcePort.dataType} 类型` };
-        }
-
-        // 使用默认验证规则
-        const defaultResult = defaultConnectionValidation(sourcePortWithType, targetPortWithType);
-        return defaultResult;
+        return { allowed: true, message: '连接允许' };
     }, [nodes]);
 
     // 使用 useRef 跟踪已显示的错误，防止重复弹出
@@ -411,6 +512,7 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({
             textProcessorTemplate,
             mathProcessorTemplate,
             conditionalTemplate,
+            loopNodeTemplate,
         ];
 
         // 批量注册节点模板
@@ -434,8 +536,11 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({
         };
     }, []);
 
-        const onConnect: OnConnect = useCallback(
+    const onConnect: OnConnect = useCallback(
         (params) => {
+            // 根据连接类型设置不同的样式
+            const isLoopBodyConnection = params.sourceHandle === 'loop-body';
+
             // 为连接添加箭头标记
             const edgeWithArrow = {
                 ...params,
@@ -443,18 +548,56 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({
                     type: MarkerType.ArrowClosed,
                     width: 20,
                     height: 20,
-                    color: '#4f46e5',
+                    color: isLoopBodyConnection ? '#7c3aed' : '#4f46e5',
                 },
                 style: {
                     strokeWidth: 2,
-                    stroke: '#4f46e5',
+                    stroke: isLoopBodyConnection ? '#7c3aed' : '#4f46e5',
+                    strokeDasharray: isLoopBodyConnection ? '5,5' : undefined, // 循环体连接使用虚线
                 },
+                label: isLoopBodyConnection ? '循环体' : undefined,
+                labelStyle: { fontSize: 10, fill: '#7c3aed' },
+                labelBgStyle: { fill: '#f3f4f6', fillOpacity: 0.8 }
             };
-            
-            // 更新边连接
+
+            // 添加边
             setEdges((eds) => addEdge(edgeWithArrow, eds));
+
+            if (params.target && params.source) {
+                setNodes((nds) =>
+                    nds.map((node: any) => {
+                        if (node.id === params.target) {
+                            if (isLoopBodyConnection) {
+                                // 循环体分支连接
+                                return {
+                                    ...node,
+                                    parentNode: params.source, // 设置为父节点（用于获取循环上下文）
+                                    isLoopBodyNode: true, // 标记为循环体节点
+                                    loopParentNode: params.source // 额外记录循环父节点
+                                };
+                            } else {
+                                // 普通数据流连接
+                                return {
+                                    ...node,
+                                    parentNode: params.source
+                                };
+                            }
+                        }
+
+                        // 如果是循环节点作为源节点，更新其循环体子节点引用
+                        if (node.id === params.source && isLoopBodyConnection) {
+                            return {
+                                ...node,
+                                loopBodyNode: params.target
+                            };
+                        }
+
+                        return node;
+                    })
+                );
+            }
         },
-        [setEdges]
+        [setEdges, setNodes]
     );
 
     const onNodeDragStop = useCallback((_event: any, _node: Node) => {
@@ -489,12 +632,13 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({
             }
 
             const newNodeId = `node_${Date.now()}`;
-            const initialData = template.initialData();
 
-            // 使用端口管理器为节点分配端口ID
-            // const portConfigs = template.getPorts(initialData); // 暂未使用
+            // 根据节点类型创建默认数据
+            const initialData = createInitialDataForNodeType(nodeType);
 
-            const newNode: Node = {
+            // 端口配置已简化，不再需要复杂的端口管理
+
+            const newNode: any = {
                 id: newNodeId,
                 type: nodeType,
                 position,
@@ -502,7 +646,9 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({
                     ...initialData,
                     id: newNodeId,
                     nodeType: nodeType,
+                    metadata: template.metadata,
                 },
+                parentNode: undefined, // 初始化时没有父节点
             };
 
             setNodes((nds) => nds.concat(newNode));
@@ -577,7 +723,7 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({
             }
 
             const newNodeId = `node_${Date.now()}`;
-            const newNode: Node = {
+            const newNode: any = {
                 ...node,
                 id: newNodeId,
                 position: {
@@ -588,6 +734,7 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({
                     ...node.data,
                     id: newNodeId,
                 },
+                parentNodes: [], // 复制的节点初始化空的父节点指针数组
             };
             setNodes((nds) => nds.concat(newNode));
 
@@ -643,6 +790,48 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({
         message.success('工作流已保存');
     };
 
+    // 简化的工作流验证函数（单父节点模式）
+    const validateWorkflow = useCallback((): { isValid: boolean; errors: string[] } => {
+        const errors: string[] = [];
+
+        for (const node of nodes) {
+            const nodeAny = node as any;
+            const template = nodeRegistry.get(node.type || '');
+            if (!template) continue;
+
+            // 检查需要输入字段的节点是否有父节点
+            if (template.inputFields && template.inputFields.length > 0) {
+                if (!nodeAny.parentNode) {
+                    const nodeLabel = nodeAny.data?.metadata?.name || node.type || node.id;
+                    errors.push(`节点"${nodeLabel}"缺少上游数据源`);
+                    continue;
+                }
+
+                // 获取上游数据选项
+                const upstreamOptions = getUpstreamDataOptions(node.id);
+
+                // 检查每个必需参数是否有有效的上游数据源
+                for (const field of template.inputFields) {
+                    if (field.required !== false) { // 默认为必需
+                        const hasValidUpstream = upstreamOptions.some(option =>
+                            option.outputType === field.type || field.type === 'any'
+                        );
+
+                        if (!hasValidUpstream) {
+                            const nodeLabel = nodeAny.data?.metadata?.name || node.type || node.id;
+                            errors.push(`节点"${nodeLabel}"的参数"${field.name}"缺少类型为"${field.type}"的上游数据源`);
+                        }
+                    }
+                }
+            }
+        }
+
+        return {
+            isValid: errors.length === 0,
+            errors
+        };
+    }, [nodes, getUpstreamDataOptions]);
+
     const handleRun = async () => {
         if (nodes.length === 0) {
             message.warning('请先添加一些节点到工作流中');
@@ -660,6 +849,25 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({
 
         if (!hasEndNode) {
             message.error('工作流必须包含一个结束节点');
+            return;
+        }
+
+        // 使用简化的验证逻辑
+        const validation = validateWorkflow();
+        if (!validation.isValid) {
+            message.error({
+                content: (
+                    <div>
+                        <div className="font-medium mb-2">工作流验证失败，请检查以下问题：</div>
+                        <ul className="list-disc pl-4 space-y-1">
+                            {validation.errors.map((error, index) => (
+                                <li key={index} className="text-sm">{error}</li>
+                            ))}
+                        </ul>
+                    </div>
+                ),
+                duration: 8,
+            });
             return;
         }
 
@@ -780,7 +988,7 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({
                                 nodes={nodes}
                                 edges={edges}
                                 onNodesChange={onNodesChange}
-                                onEdgesChange={onEdgesChange}
+                                onEdgesChange={handleEdgesChange}
                                 onConnect={onConnect}
                                 onNodeDragStop={onNodeDragStop}
                                 onInit={setReactFlowInstance}

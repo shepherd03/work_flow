@@ -9,6 +9,14 @@ export interface NodeMetadata {
     icon?: ReactNode;       // 图标
 }
 
+export type FieldType = 'string' | 'number' | 'boolean' | 'array' | 'object';
+
+export interface NodeField {
+    name: string;
+    type: FieldType;
+    defaultValue: any;
+}
+
 // 工作流定义
 export interface Workflow {
     id: string;
@@ -19,32 +27,34 @@ export interface Workflow {
     variables?: Record<string, any>;
 }
 
+// 节点关系类型
+export type NodeRelationType = 'data' | 'loopBody';
+
+// 节点关系定义
+export interface NodeRelation {
+    type: NodeRelationType;
+    targetNodeId: string;
+}
+
 // 节点定义
 export interface Node<T> {
     id: string;
     type: string;
     position: { x: number; y: number };
     data: T;
+    parentNode?: string; // 父节点指针，用于主数据流
+    loopBodyNode?: string; // 循环体子节点指针（仅循环节点使用）
+    loopContext?: LoopExecutionContext; // 循环执行上下文
 }
 
-export interface PortConnectionRuleResult {
-    allowed: boolean;
-    message?: string;
+// 循环执行上下文
+export interface LoopExecutionContext {
+    element: any;      // 当前循环元素
+    index: number;     // 当前索引
+    array: any[];      // 整个数组
+    loopNodeId: string; // 循环节点ID
 }
 
-// 端口连接规则
-export interface PortConnectionRule {
-    allowedDataTypes?: string[];  // 允许连接的数据类型列表
-    disallowedDataTypes?: string[]; // 禁止连接的数据类型列表
-    customValidation?: (sourcePort: Port, targetPort: Port) => PortConnectionRuleResult; // 自定义验证函数
-}
-
-// 简化的端口定义 - 每个节点只有一个输入端口和一个输出端口
-export interface Port {
-    id: string;           // 端口ID
-    dataType: string;     // 数据类型
-    connectionRules?: PortConnectionRule; // 自定义连接规则
-}
 
 // 边定义
 export interface Edge {
@@ -92,6 +102,10 @@ export interface ExecutionContext {
     // 新增：根据节点类型获取上游数据
     getUpstreamDataByType: (nodeType: string) => Record<string, any>[];
 
+    // 循环体分支相关方法
+    getLoopBodyNode?: (loopNodeId: string) => Promise<Node<any> | null>;
+    executeLoopBody?: (loopNodeId: string, loopBodyNode: Node<any>, element: any, index: number, array: any[]) => Promise<any>;
+
     logger?: {
         info: (msg: string) => void;
         warn: (msg: string) => void;
@@ -125,17 +139,8 @@ export interface NodeTemplate<T extends Record<string, any>> {
     // 元数据
     metadata: NodeMetadata;
 
-    // 数据结构
-    initialData: () => T;  // 初始数据生成器
-
-    // 节点参数定义
-    parameters?: NodeParameter[];   // 节点需要的参数定义
-
-    // 简化的端口配置 - 每个节点只有一个输入和一个输出端口
-    getPorts: (nodeData: T) => {
-        input: Port;
-        output: Port;
-    };
+    // 输入字段定义 - 这些字段会自动在编辑面板上生成对应的参数选择器
+    inputFields?: NodeParameter[];
 
     // 验证器
     validate?: (nodeData: T) => {

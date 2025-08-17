@@ -59,8 +59,9 @@ export const ParameterSelector: React.FC<ParameterSelectorProps> = ({
             {parameters.map((parameter) => {
                 const selection = parameterSelections[parameter.key] || {
                     parameterKey: parameter.key,
-                    source: 'static',
-                    staticValue: parameter.defaultValue
+                    source: 'upstream',
+                    sourceNodeId: undefined,
+                    sourceOutputKey: undefined
                 };
 
                 const filteredUpstreamOptions = getFilteredUpstreamOptions(parameter.type);
@@ -139,12 +140,15 @@ export const ParameterSelector: React.FC<ParameterSelectorProps> = ({
                                         placeholder="选择数据源"
                                     />
                                 ) : (
-                                    <div className="bg-yellow-50 border border-yellow-200 rounded p-2">
-                                        <Text type="warning" className="text-xs">
-                                            暂无可用的 {parameter.type} 类型上游数据
+                                    <div className="bg-red-50 border border-red-200 rounded p-2">
+                                        <Text type="danger" className="text-xs font-medium">
+                                            ❌ 缺少必需的 {parameter.type} 类型上游数据
                                         </Text>
                                         <Text type="secondary" className="text-xs block mt-1">
-                                            请先连接提供 {parameter.type} 类型数据的上游节点
+                                            该参数必须从上游节点获取，请先连接提供 {parameter.type} 类型数据的上游节点
+                                        </Text>
+                                        <Text type="secondary" className="text-xs block mt-1 italic">
+                                            💡 工作流将无法执行，直到所有必需参数都有上游数据源
                                         </Text>
                                     </div>
                                 )}

@@ -18,44 +18,8 @@ export const createStringDataNodeTemplate = (
             icon: React.createElement(DatabaseOutlined),
         },
 
-        initialData: () => ({
-            value: ""
-        }),
-
-        getPorts: (nodeData) => {
-            return {
-                input: {
-                    id: 'input',
-                    dataType: 'string',
-                    // 自定义连接规则示例：只允许接受字符串类型
-                    connectionRules: {
-                        allowedDataTypes: ['string'],
-                        customValidation: (sourcePort, targetPort) => {
-                            // 可以添加更复杂的验证逻辑
-                            if (sourcePort.dataType === 'string' && targetPort.dataType === 'string') {
-                                return { allowed: true };
-                            }
-                            return { allowed: false, message: '字符串端口只能连接字符串类型' };
-                        }
-                    }
-                },
-                output: {
-                    id: 'output',
-                    dataType: 'string',
-                    // 自定义连接规则示例：只允许输出到字符串类型
-                    connectionRules: {
-                        allowedDataTypes: ['string'],
-                        customValidation: (sourcePort, targetPort) => {
-                            // 可以添加更复杂的验证逻辑
-                            if (sourcePort.dataType === 'string' && targetPort.dataType === 'string') {
-                                return { allowed: true };
-                            }
-                            return { allowed: false, message: '字符串端口只能连接到字符串类型' };
-                        }
-                    }
-                },
-            };
-        },
+        // 数据节点通常不需要输入字段，它们直接提供数据
+        inputFields: [],
 
         validate: (nodeData) => {
             const errors: string[] = [];
@@ -104,10 +68,8 @@ export const createStringDataNodeTemplate = (
         },
 
         renderInEditor: (nodeData, isSelected, onDataChange, metadata) => {
-            const ports = createStringDataNodeTemplate().getPorts(nodeData);
-
             return (
-                <GeneralNodeWrapper inputPort={ports.input} outputPort={ports.output}>
+                <GeneralNodeWrapper hasInput={false} hasOutput={true}>
                     <div className="space-y-3">
                         {/* 节点头部 */}
                         <div className="flex items-center justify-between">
@@ -166,22 +128,8 @@ export const createNumberDataNodeTemplate = (
             icon: React.createElement(NumberOutlined),
         },
 
-        initialData: () => ({
-            value: 0
-        }),
-
-        getPorts: (nodeData) => {
-            return {
-                input: {
-                    id: 'input',
-                    dataType: 'number',
-                },
-                output: {
-                    id: 'output',
-                    dataType: 'number',
-                },
-            };
-        },
+        // 数据节点通常不需要输入字段，它们直接提供数据
+        inputFields: [],
 
         validate: (nodeData) => {
             const errors: string[] = [];
@@ -232,10 +180,8 @@ export const createNumberDataNodeTemplate = (
         },
 
         renderInEditor: (nodeData, isSelected, onDataChange, metadata) => {
-            const ports = createNumberDataNodeTemplate().getPorts(nodeData);
-
             return (
-                <GeneralNodeWrapper inputPort={ports.input} outputPort={ports.output}>
+                <GeneralNodeWrapper hasInput={false} hasOutput={true}>
                     <div className="space-y-3">
                         {/* 节点头部 */}
                         <div className="flex items-center justify-between">
@@ -296,22 +242,8 @@ export const createBooleanDataNodeTemplate = (
             icon: React.createElement(CheckCircleOutlined),
         },
 
-        initialData: () => ({
-            value: false
-        }),
-
-        getPorts: (nodeData) => {
-            return {
-                input: {
-                    id: 'input',
-                    dataType: 'boolean',
-                },
-                output: {
-                    id: 'output',
-                    dataType: 'boolean',
-                },
-            };
-        },
+        // 数据节点通常不需要输入字段，它们直接提供数据
+        inputFields: [],
 
         validate: (nodeData) => {
             const errors: string[] = [];
@@ -362,10 +294,8 @@ export const createBooleanDataNodeTemplate = (
         },
 
         renderInEditor: (nodeData, isSelected, onDataChange, metadata) => {
-            const ports = createBooleanDataNodeTemplate().getPorts(nodeData);
-
             return (
-                <GeneralNodeWrapper inputPort={ports.input} outputPort={ports.output}>
+                <GeneralNodeWrapper hasInput={false} hasOutput={true}>
                     <div className="space-y-3">
                         {/* 节点头部 */}
                         <div className="flex items-center justify-between">
@@ -444,22 +374,8 @@ export const createArrayDataNodeTemplate = (
             icon: React.createElement(UnorderedListOutlined),
         },
 
-        initialData: () => ({
-            value: []
-        }),
-
-        getPorts: (nodeData) => {
-            return {
-                input: {
-                    id: 'input',
-                    dataType: 'array',
-                },
-                output: {
-                    id: 'output',
-                    dataType: 'array',
-                },
-            };
-        },
+        // 数据节点通常不需要输入字段，它们直接提供数据
+        inputFields: [],
 
         validate: (nodeData) => {
             const errors: string[] = [];
@@ -513,7 +429,6 @@ export const createArrayDataNodeTemplate = (
             const arrayValue = Array.isArray(nodeData.value) ? nodeData.value : [];
             const [editValue, setEditValue] = React.useState(JSON.stringify(arrayValue, null, 2));
             const [isEditing, setIsEditing] = React.useState(false);
-            const ports = createArrayDataNodeTemplate().getPorts(nodeData);
 
             // 当节点数据变化时，同步更新编辑值
             React.useEffect(() => {
@@ -523,7 +438,7 @@ export const createArrayDataNodeTemplate = (
             }, [arrayValue, isEditing]);
 
             return (
-                <GeneralNodeWrapper inputPort={ports.input} outputPort={ports.output}>
+                <GeneralNodeWrapper hasInput={false} hasOutput={true}>
                     <div className="space-y-3">
                         {/* 节点头部 */}
                         <div className="flex items-center justify-between">
@@ -616,22 +531,8 @@ export const createObjectDataNodeTemplate = (
             icon: React.createElement(FileTextOutlined),
         },
 
-        initialData: () => ({
-            value: {}
-        }),
-
-        getPorts: (nodeData) => {
-            return {
-                input: {
-                    id: 'input',
-                    dataType: 'object',
-                },
-                output: {
-                    id: 'output',
-                    dataType: 'object',
-                },
-            };
-        },
+        // 数据节点通常不需要输入字段，它们直接提供数据
+        inputFields: [],
 
         validate: (nodeData) => {
             const errors: string[] = [];
@@ -688,7 +589,6 @@ export const createObjectDataNodeTemplate = (
             const keyCount = Object.keys(objectValue).length;
             const [editValue, setEditValue] = React.useState(JSON.stringify(objectValue, null, 2));
             const [isEditing, setIsEditing] = React.useState(false);
-            const ports = createObjectDataNodeTemplate().getPorts(nodeData);
 
             // 当节点数据变化时，同步更新编辑值
             React.useEffect(() => {
@@ -698,7 +598,7 @@ export const createObjectDataNodeTemplate = (
             }, [objectValue, isEditing]);
 
             return (
-                <GeneralNodeWrapper inputPort={ports.input} outputPort={ports.output}>
+                <GeneralNodeWrapper hasInput={false} hasOutput={true}>
                     <div className="space-y-3">
                         {/* 节点头部 */}
                         <div className="flex items-center justify-between">

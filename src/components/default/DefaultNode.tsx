@@ -1,7 +1,7 @@
 import React from 'react';
 import { Tag } from 'antd';
 import { InfoCircleOutlined, TagOutlined } from '@ant-design/icons';
-import type { NodeMetadata, Port } from '../../types/workflow';
+import type { NodeMetadata } from '../../types/workflow';
 import { GeneralNodeWrapper } from '../general/GeneralNodeWrapper';
 
 interface DefaultNodeProps {
@@ -9,8 +9,8 @@ interface DefaultNodeProps {
     isSelected: boolean;
     onDataChange: (data: any) => void;
     metadata: NodeMetadata;
-    inputPort?: Port;
-    outputPort?: Port;
+    hasInput?: boolean;
+    hasOutput?: boolean;
 }
 
 export const DefaultNode: React.FC<DefaultNodeProps> = ({
@@ -18,11 +18,11 @@ export const DefaultNode: React.FC<DefaultNodeProps> = ({
     isSelected,
     onDataChange,
     metadata,
-    inputPort,
-    outputPort
+    hasInput = true,
+    hasOutput = true
 }) => {
     return (
-        <GeneralNodeWrapper inputPort={inputPort} outputPort={outputPort}>
+        <GeneralNodeWrapper hasInput={hasInput} hasOutput={hasOutput}>
             <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center space-x-2">
                     {metadata.icon && (
